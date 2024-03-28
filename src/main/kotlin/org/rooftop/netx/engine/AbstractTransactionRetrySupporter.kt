@@ -12,7 +12,7 @@ import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
-abstract class AbstractTransactionRetrySupporter(
+internal abstract class AbstractTransactionRetrySupporter(
     private val backpressureSize: Int,
     private val recoveryMilli: Long,
     private val transactionDispatcher: AbstractTransactionDispatcher,

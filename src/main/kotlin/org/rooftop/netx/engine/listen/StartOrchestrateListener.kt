@@ -8,14 +8,14 @@ import org.rooftop.netx.engine.ResultHolder
 import reactor.core.publisher.Mono
 
 internal class StartOrchestrateListener<T : Any, V : Any>(
-    codec: Codec,
+    private val codec: Codec,
     private val transactionManager: TransactionManager,
     private val orchestratorId: String,
     orchestrateSequence: Int,
     private val orchestrateCommand: OrchestrateCommand<T, V>,
-    requestHolder: RequestHolder,
-    resultHolder: ResultHolder,
-    typeReference: TypeReference<T>?,
+    private val requestHolder: RequestHolder,
+    private val resultHolder: ResultHolder,
+    private val typeReference: TypeReference<T>?,
 ) : AbstractOrchestrateListener<T, V>(
     orchestratorId,
     orchestrateSequence,
@@ -26,43 +26,89 @@ internal class StartOrchestrateListener<T : Any, V : Any>(
     typeReference,
 ) {
 
-    @TransactionStartListener(OrchestrateEvent::class)
-    fun listenStartOrchestrateEvent(transactionStartEvent: TransactionStartEvent): Mono<Unit> {
-        return transactionStartEvent.toOrchestrateEvent()
-            .filter { it.orchestratorId == orchestratorId && it.orchestrateSequence == orchestrateSequence }
-            .mapReifiedRequest()
-            .flatMap { (request, event) ->
-                holdRequestIfRollbackable(request, transactionStartEvent.transactionId)
-                    .map { it to event }
-            }
-            .map { (request, event) ->
-                orchestrateCommand.command(request, event.context)
-            }
-            .setNextCastableType()
-            .onErrorRollback(
-                transactionStartEvent.transactionId,
-                transactionStartEvent.decodeEvent(OrchestrateEvent::class)
+    override fun withAnnotated(): AbstractOrchestrateListener<T, V> {
+        return when {
+            isFirst && isLast -> this.successWithCommit()
+            isFirst && !isLast -> this.successWithJoin()
+            else -> error("Cannot annotated")
+        }
+    }
+
+    private fun successWithJoin(): AbstractOrchestrateListener<T, V> {
+        return object : AbstractOrchestrateListener<T, V>(
+            orchestratorId,
+            orchestrateSequence,
+            codec,
+            transactionManager,
+            requestHolder,
+            resultHolder,
+            typeReference,
+        ) {
+            @TransactionStartListener(
+                event = OrchestrateEvent::class,
+                successWith = SuccessWith.PUBLISH_JOIN
             )
-            .toOrchestrateEvent()
-            .flatMap {
-                if (isLast) {
-                    return@flatMap transactionManager.commit(
-                        transactionId = transactionStartEvent.transactionId,
-                        event = it,
-                    )
-                }
-                transactionManager.join(
-                    transactionId = transactionStartEvent.transactionId,
-                    undo = "",
-                    event = it,
-                )
+            fun handleTransactionStartEvent(transactionStartEvent: TransactionStartEvent): Mono<OrchestrateEvent> {
+                return transactionStartEvent.startWithOrchestrateEvent()
+                    .filter { it.orchestratorId == orchestratorId && it.orchestrateSequence == orchestrateSequence }
+                    .mapReifiedRequest()
+                    .flatMap { (request, event) ->
+                        holdRequestIfRollbackable(request, transactionStartEvent.transactionId)
+                            .map { it to event }
+                    }
+                    .map { (request, event) ->
+                        orchestrateCommand.command(request, event.context)
+                    }
+                    .setNextCastableType()
+                    .doOnError {
+                        rollback(
+                            transactionStartEvent.transactionId,
+                            it,
+                            transactionStartEvent.decodeEvent(OrchestrateEvent::class)
+                        )
+                    }
+                    .toOrchestrateEvent()
+                    .map { transactionStartEvent.setNextEvent(it) }
             }
-            .onErrorResume {
-                if (it::class == AlreadyCommittedTransactionException::class) {
-                    return@onErrorResume Mono.empty()
-                }
-                throw it
+        }
+    }
+
+    private fun successWithCommit(): AbstractOrchestrateListener<T, V> {
+        return object : AbstractOrchestrateListener<T, V>(
+            orchestratorId,
+            orchestrateSequence,
+            codec,
+            transactionManager,
+            requestHolder,
+            resultHolder,
+            typeReference,
+        ) {
+            @TransactionStartListener(
+                event = OrchestrateEvent::class,
+                successWith = SuccessWith.PUBLISH_COMMIT
+            )
+            fun handleTransactionStartEvent(transactionStartEvent: TransactionStartEvent): Mono<OrchestrateEvent> {
+                return transactionStartEvent.startWithOrchestrateEvent()
+                    .filter { it.orchestratorId == orchestratorId && it.orchestrateSequence == orchestrateSequence }
+                    .mapReifiedRequest()
+                    .flatMap { (request, event) ->
+                        holdRequestIfRollbackable(request, transactionStartEvent.transactionId)
+                            .map { it to event }
+                    }
+                    .map { (request, event) ->
+                        orchestrateCommand.command(request, event.context)
+                    }
+                    .setNextCastableType()
+                    .doOnError {
+                        rollback(
+                            transactionStartEvent.transactionId,
+                            it,
+                            transactionStartEvent.decodeEvent(OrchestrateEvent::class)
+                        )
+                    }
+                    .toOrchestrateEvent()
+                    .map { transactionStartEvent.setNextEvent(it) }
             }
-            .map { }
+        }
     }
 }

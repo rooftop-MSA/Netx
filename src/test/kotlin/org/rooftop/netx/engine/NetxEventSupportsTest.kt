@@ -31,7 +31,7 @@ class NetxEventSupportsTest(
     "event로 객체가 주어지면, TransactionRollbackEvent에서 해당 객체를 decode 할 수 있다." {
         // given
         val expected = Foo("hello", 1.1234567891234568)
-        transactionManager.syncStart(UNDO, expected)
+        transactionManager.syncStart(expected)
 
         Thread.sleep(1000)
 
@@ -45,8 +45,8 @@ class NetxEventSupportsTest(
     "event로 Map이 주어지면, TransactionRollbackEvent에서 해당 객체를 decode할 수 있다." {
         // given
         val expected = mapOf("name" to "hello")
-        val transactionId = transactionManager.syncStart(UNDO)
-        transactionManager.syncJoin(transactionId, UNDO, expected)
+        val transactionId = transactionManager.syncStart()
+        transactionManager.syncJoin(transactionId, expected)
 
         Thread.sleep(1000)
 
@@ -61,7 +61,7 @@ class NetxEventSupportsTest(
     "event로 Int가 주어지면, TransactionRollbackEvent에서 해당 객체를 decode할 수 있다." {
         // given
         val expected = 1
-        val transactionId = transactionManager.syncStart(UNDO)
+        val transactionId = transactionManager.syncStart()
         transactionManager.syncCommit(transactionId, expected)
 
         Thread.sleep(1000)
@@ -76,7 +76,7 @@ class NetxEventSupportsTest(
     "event로 Long이 주어지면, TransactionRollbackEvent에서 해당 객체를 decode할 수 있다." {
         // given
         val expected = 1L
-        val transactionId = transactionManager.syncStart(UNDO)
+        val transactionId = transactionManager.syncStart()
         transactionManager.syncRollback(transactionId, "cause", expected)
 
         Thread.sleep(1000)
@@ -91,7 +91,7 @@ class NetxEventSupportsTest(
     "event로 String이 주어지면, TransactionRollbackEvent에서 해당 객체를 decode할 수 있다." {
         // given
         val expected = "string"
-        transactionManager.syncStart(UNDO, expected)
+        transactionManager.syncStart(expected)
 
         Thread.sleep(1000)
 
@@ -105,7 +105,7 @@ class NetxEventSupportsTest(
     "event로 char이 주어지면, TransactionRollbackEvent에서 해당 객체를 decode할 수 있다." {
         // given
         val expected = 'c'
-        transactionManager.syncStart(UNDO, expected)
+        transactionManager.syncStart(expected)
 
         Thread.sleep(1000)
 
@@ -119,7 +119,7 @@ class NetxEventSupportsTest(
     "event로 Boolean이 주어지면, TransactionRollbackEvent에서 해당 객체를 decode할 수 있다." {
         // given
         val expected = true
-        transactionManager.syncStart(UNDO, expected)
+        transactionManager.syncStart(expected)
 
         Thread.sleep(1000)
 
@@ -133,7 +133,7 @@ class NetxEventSupportsTest(
     "event로 Unit이 주어지면, TransactionRollbackEvent에서 해당 객체를 decode할 수 있다." {
         // given
         val expected = Unit
-        transactionManager.syncStart(UNDO, expected)
+        transactionManager.syncStart(expected)
 
         Thread.sleep(1000)
 
@@ -144,10 +144,6 @@ class NetxEventSupportsTest(
         result shouldBeEqual expected
     }
 }) {
-
-    companion object {
-        private const val UNDO = "UNDO"
-    }
 
     class Foo(val name: String, val price: Double)
 }

@@ -19,13 +19,13 @@ class MonoTransactionHandlerAssertions : AbstractTransactionHandlerAssertions() 
         return Mono.just(Unit)
     }
 
-    @TransactionStartListener
+    @TransactionStartListener(successWith = SuccessWith.END)
     fun handleStart(event: TransactionStartEvent): Mono<Unit> {
         put("START")
         return Mono.just(Unit)
     }
 
-    @TransactionJoinListener
+    @TransactionJoinListener(successWith = SuccessWith.END)
     fun handleJoin(event: TransactionJoinEvent): Mono<Unit> {
         put("JOIN")
         return Mono.just(Unit)

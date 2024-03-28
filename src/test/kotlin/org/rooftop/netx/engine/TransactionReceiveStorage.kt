@@ -19,12 +19,12 @@ class TransactionReceiveStorage {
         commitEvents.clear()
     }
 
-    @TransactionStartListener
+    @TransactionStartListener(successWith = SuccessWith.END)
     fun handleStart(transactionStartEvent: TransactionStartEvent) {
         startEvents.add(transactionStartEvent)
     }
 
-    @TransactionJoinListener
+    @TransactionJoinListener(successWith = SuccessWith.END)
     fun handleJoin(transactionJoinEvent: TransactionJoinEvent) {
         joinEvents.add(transactionJoinEvent)
     }

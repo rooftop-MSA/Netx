@@ -9,6 +9,8 @@ class Result<T : Any> private constructor(
     private val error: Error? = null,
 ) {
 
+    fun decodeResultOrThrow(typeReference: TypeReference<T>): T = decodeResult(typeReference)
+
     fun decodeResultOrThrow(type: Class<T>): T = decodeResultOrThrow(type.kotlin)
 
     fun decodeResultOrThrow(type: KClass<T>): T {
@@ -18,7 +20,7 @@ class Result<T : Any> private constructor(
         return decodeResult(type)
     }
 
-    fun decodeResult(typeReference: TypeReference<T>): T =  result?.let {
+    fun decodeResult(typeReference: TypeReference<T>): T = result?.let {
         codec.decode(it, typeReference)
     } ?: throw ResultException("Cannot decode result cause Result is fail state")
 

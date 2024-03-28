@@ -9,7 +9,7 @@ import org.springframework.data.redis.connection.RedisStreamCommands.XClaimOptio
 import org.springframework.data.redis.core.ReactiveRedisTemplate
 import reactor.core.publisher.Flux
 
-class RedisTransactionRetrySupporter(
+internal class RedisTransactionRetrySupporter(
     recoveryMilli: Long,
     backpressureSize: Int,
     transactionDispatcher: AbstractTransactionDispatcher,

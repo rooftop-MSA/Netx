@@ -7,13 +7,13 @@ import reactor.core.publisher.Mono
 import kotlin.reflect.KClass
 import kotlin.reflect.KFunction
 
-internal fun Mono<TransactionEvent>.callMono(function: MonoDispatchFunction): Mono<*> {
+internal fun Mono<TransactionEvent>.callOrchestrate(function: OrchestrateDispatchFunction): Mono<*> {
     return this.flatMap {
         function.call(it)
     }
 }
 
-internal class MonoDispatchFunction(
+internal class OrchestrateDispatchFunction(
     eventType: KClass<*>,
     function: KFunction<Mono<*>>,
     handler: Any,
@@ -34,14 +34,16 @@ internal class MonoDispatchFunction(
             .filter { isProcessable(transactionEvent) }
             .map { transactionEvent.copy() }
             .flatMap { function.call(handler, transactionEvent) }
-            .info("Call Mono TransactionHandler \"${name()}\" with transactionId \"${transactionEvent.transactionId}\"")
+            .info("Call OrchestrateHandler \"${name()}\" with transactionId \"${transactionEvent.transactionId}\"")
+            .map {
+                publishNextTransaction(transactionEvent)
+                it
+            }
             .switchIfEmpty(`continue`)
-            .doOnNext { publishNextTransaction(transactionEvent) }
             .onErrorResume {
                 if (isNoRollbackFor(it)) {
                     return@onErrorResume noRollbackFor
                 }
-                rollback(transactionEvent, it)
                 `continue`
             }
     }

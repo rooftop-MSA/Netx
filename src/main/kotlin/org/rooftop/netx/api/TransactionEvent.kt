@@ -6,9 +6,15 @@ sealed class TransactionEvent(
     val transactionId: String,
     val nodeName: String,
     val group: String,
-    private val event: String?,
-    private val codec: Codec,
+    internal val event: String?,
+    internal val codec: Codec,
+    internal var nextEvent: Any? = null,
 ) {
+
+    fun <T : Any> setNextEvent(event: T): T {
+        this.nextEvent = event
+        return event
+    }
 
     fun <T : Any> decodeEvent(type: Class<T>): T = decodeEvent(type.kotlin)
 
@@ -17,4 +23,6 @@ sealed class TransactionEvent(
             event ?: throw NullPointerException("Cannot decode event cause event is null"),
             type
         )
+
+    internal abstract fun copy(): TransactionEvent
 }

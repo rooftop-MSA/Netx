@@ -29,7 +29,7 @@ class NetxEventTypedDispatherTest(
     }
 
     "event로 Foo 타입의 클래스가 주어지면, Any::class, Foo::class의 모든 핸들러에게 트랜잭션이 전파된다." {
-        transactionManager.syncStart(UNDO, Foo("xb"))
+        transactionManager.syncStart(Foo("xb"))
 
         eventually(5.seconds) {
             transactionTypedReceiveStorage.handlerShouldBeEqual(Any::class, 1)
@@ -42,7 +42,7 @@ class NetxEventTypedDispatherTest(
     }
 
     "event로 String 타입의 클래스가 주어지면, Any::class, String::class의 모든 핸들러에게 트랜잭션이 전파된다." {
-        transactionManager.syncStart(UNDO, "String")
+        transactionManager.syncStart("String")
 
         eventually(5.seconds) {
             transactionTypedReceiveStorage.handlerShouldBeEqual(Any::class, 1)
@@ -55,7 +55,7 @@ class NetxEventTypedDispatherTest(
     }
 
     "event로 Long 타입의 클래스가 주어지면, Any::class, Long::class, String::class, Boolean::class 의 모든 핸들러에게 트랜잭션이 전파된다." {
-        transactionManager.syncStart(UNDO, 1000L)
+        transactionManager.syncStart(1000L)
 
         eventually(5.seconds) {
             transactionTypedReceiveStorage.handlerShouldBeEqual(Any::class, 1)
@@ -68,7 +68,7 @@ class NetxEventTypedDispatherTest(
     }
 
     "event로 Boolean 타입의 클래스가 주어지면, Any::class, Boolean::class, String::class 의 모든 핸들러에게 트랜잭션이 전파된다." {
-        transactionManager.syncStart(UNDO, true)
+        transactionManager.syncStart(true)
 
         eventually(5.seconds) {
             transactionTypedReceiveStorage.handlerShouldBeEqual(Any::class, 1)
@@ -81,7 +81,7 @@ class NetxEventTypedDispatherTest(
     }
 
     "event로 어떠한것도 전달되지 않으면, Any::class의 모든 핸들러에게 트랜잭션이 전파된다." {
-        transactionManager.syncStart(UNDO)
+        transactionManager.syncStart()
 
         eventually(5.seconds) {
             transactionTypedReceiveStorage.handlerShouldBeEqual(Any::class, 1)
@@ -94,7 +94,7 @@ class NetxEventTypedDispatherTest(
     }
 
     "event로 Unit이 주어지면, Unit::class의 핸들러에게 트랜잭션이 전파된다." {
-        transactionManager.syncStart(UNDO, Unit)
+        transactionManager.syncStart(Unit)
 
         eventually(5.seconds) {
             transactionTypedReceiveStorage.handlerShouldBeEqual(Any::class, 1)
@@ -107,9 +107,6 @@ class NetxEventTypedDispatherTest(
     }
 
 }) {
-    private companion object {
-        private const val UNDO = "UNDO"
-    }
 
     class Foo(val name: String)
 }

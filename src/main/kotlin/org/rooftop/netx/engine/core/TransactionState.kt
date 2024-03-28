@@ -1,6 +1,6 @@
 package org.rooftop.netx.engine.core
 
-enum class TransactionState {
+internal enum class TransactionState {
     JOIN,
     COMMIT,
     ROLLBACK,

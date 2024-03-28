@@ -8,7 +8,7 @@ import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 import reactor.core.scheduler.Schedulers
 
-abstract class AbstractTransactionListener(
+internal abstract class AbstractTransactionListener(
     private val backpressureSize: Int,
     private val transactionDispatcher: AbstractTransactionDispatcher,
 ) {

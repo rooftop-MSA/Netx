@@ -13,8 +13,9 @@ import kotlin.reflect.KClass
 import kotlin.reflect.KFunction
 import kotlin.reflect.full.declaredMemberFunctions
 
-abstract class AbstractTransactionDispatcher(
+internal abstract class AbstractTransactionDispatcher(
     private val codec: Codec,
+    private val transactionManager: TransactionManager,
 ) {
 
     private val functions =
@@ -25,21 +26,27 @@ abstract class AbstractTransactionDispatcher(
             .flatMap { function ->
                 when (function) {
                     is MonoDispatchFunction -> {
-                        mapToTransactionEvent(transaction)
+                        mapToTransactionEvent(transaction.copy())
                             .callMono(function)
                             .warningOnError("Error occurred in TransactionHandler function \"${function.name()}\" with transaction id ${transaction.id}")
                     }
 
                     is NotPublishDispatchFunction -> {
-                        mapToTransactionEvent(transaction)
+                        mapToTransactionEvent(transaction.copy())
                             .callNotPublish(function)
+                            .warningOnError("Error occurred in TransactionHandler function \"${function.name()}\" with transaction id ${transaction.id}")
+                    }
+
+                    is OrchestrateDispatchFunction -> {
+                        mapToTransactionEvent(transaction.copy())
+                            .callOrchestrate(function)
                             .warningOnError("Error occurred in TransactionHandler function \"${function.name()}\" with transaction id ${transaction.id}")
                     }
                 }
             }
             .subscribeOn(Schedulers.boundedElastic())
             .ackWhenComplete(transaction, messageId)
-            .then(Mono.just(DISPATHCED))
+            .then(Mono.just(DISPATCHED))
     }
 
     private fun Flux<*>.ackWhenComplete(
@@ -88,15 +95,8 @@ abstract class AbstractTransactionDispatcher(
                 )
             )
 
-            TransactionState.ROLLBACK -> findOwnUndo(transaction)
-                .onErrorResume {
-                    if (it is TransactionException) {
-                        return@onErrorResume Mono.empty()
-                    }
-                    throw it
-                }
-                .warningOnError("Error occurred when findOwnUndo transaction ${transaction.id}")
-                .map {
+            TransactionState.ROLLBACK ->
+                Mono.just(
                     TransactionRollbackEvent(
                         transactionId = transaction.id,
                         nodeName = transaction.serverId,
@@ -104,10 +104,9 @@ abstract class AbstractTransactionDispatcher(
                         event = extractEvent(transaction),
                         cause = transaction.cause
                             ?: throw NullPointerException("Null value on TransactionRollbackEvent's cause field"),
-                        undo = it,
                         codec = codec,
                     )
-                }
+                )
         }
     }
 
@@ -118,12 +117,40 @@ abstract class AbstractTransactionDispatcher(
         }
     }
 
-    protected abstract fun findOwnUndo(transaction: Transaction): Mono<String>
+    internal fun addOrchestrate(handler: Any) {
+        addOrchestrateFunctions(handler)
+        info("Add orchestrate fucntion : \"${handler}\"")
+    }
 
-    internal fun addHandler(handler: Any) {
-        initMonoFunctions(listOf(handler))
-        initNotPublisherFunctions(listOf(handler))
-        info("Add functions : \"${handler}\"")
+    @Suppress("UNCHECKED_CAST")
+    private fun addOrchestrateFunctions(handler: Any) {
+        val returnTypeMatchedHandlers = handler::class.declaredMemberFunctions
+            .filter { it.returnType.classifier == Mono::class }
+
+        returnTypeMatchedHandlers.forEach { function ->
+            function.annotations
+                .forEach { annotation ->
+                    runCatching {
+                        val transactionState = getMatchedTransactionState(annotation)
+                        val eventType = getEventType(annotation)
+                        val noRollbackFor = getNoRollbackFor(annotation)
+                        val nextState = getNextTransactionState(annotation)
+                        functions.putIfAbsent(transactionState, mutableListOf())
+                        functions[transactionState]?.add(
+                            OrchestrateDispatchFunction(
+                                eventType,
+                                function as KFunction<Mono<*>>,
+                                handler,
+                                noRollbackFor,
+                                nextState,
+                                transactionManager,
+                            )
+                        )
+                    }.onFailure {
+                        throw IllegalStateException("Cannot add Mono TransactionHandler", it)
+                    }
+                }
+        }
     }
 
     @PostConstruct
@@ -151,14 +178,17 @@ abstract class AbstractTransactionDispatcher(
                         runCatching {
                             val transactionState = getMatchedTransactionState(annotation)
                             val eventType = getEventType(annotation)
-                            val noRetryFor = getNoRetryFor(annotation)
+                            val noRollbackFor = getNoRollbackFor(annotation)
+                            val nextState = getNextTransactionState(annotation)
                             functions.putIfAbsent(transactionState, mutableListOf())
                             functions[transactionState]?.add(
                                 MonoDispatchFunction(
                                     eventType,
                                     function as KFunction<Mono<*>>,
                                     handler,
-                                    noRetryFor,
+                                    noRollbackFor,
+                                    nextState,
+                                    transactionManager,
                                 )
                             )
                         }.onFailure {
@@ -183,10 +213,18 @@ abstract class AbstractTransactionDispatcher(
                         runCatching {
                             val transactionState = getMatchedTransactionState(annotation)
                             val eventType = getEventType(annotation)
-                            val noRetryFor = getNoRetryFor(annotation)
+                            val noRollbackFor = getNoRollbackFor(annotation)
+                            val nextState = getNextTransactionState(annotation)
                             functions.putIfAbsent(transactionState, mutableListOf())
                             functions[transactionState]?.add(
-                                NotPublishDispatchFunction(eventType, function, handler, noRetryFor)
+                                NotPublishDispatchFunction(
+                                    eventType,
+                                    function,
+                                    handler,
+                                    noRollbackFor,
+                                    nextState,
+                                    transactionManager,
+                                )
                             )
                         }.onFailure {
                             throw IllegalStateException("Cannot add TransactionHandler", it)
@@ -208,12 +246,12 @@ abstract class AbstractTransactionDispatcher(
         }
     }
 
-    private fun getNoRetryFor(annotation: Annotation): Array<KClass<out Throwable>> {
+    private fun getNoRollbackFor(annotation: Annotation): Array<KClass<out Throwable>> {
         return when (annotation) {
-            is TransactionStartListener -> annotation.noRetryFor
-            is TransactionCommitListener -> annotation.noRetryFor
-            is TransactionJoinListener -> annotation.noRetryFor
-            is TransactionRollbackListener -> annotation.noRetryFor
+            is TransactionStartListener -> annotation.noRollbackFor
+            is TransactionCommitListener -> annotation.noRollbackFor
+            is TransactionJoinListener -> annotation.noRollbackFor
+            is TransactionRollbackListener -> emptyArray()
             else -> throw notMatchedTransactionHandlerException
         }
     }
@@ -228,13 +266,29 @@ abstract class AbstractTransactionDispatcher(
         }
     }
 
+    private fun getNextTransactionState(annotation: Annotation): AbstractDispatchFunction.NextTransactionState {
+        return when (annotation) {
+            is TransactionStartListener -> annotation.successWith.toNextTransactionState()
+            is TransactionJoinListener -> annotation.successWith.toNextTransactionState()
+            else -> AbstractDispatchFunction.NextTransactionState.END
+        }
+    }
+
+    private fun SuccessWith.toNextTransactionState(): AbstractDispatchFunction.NextTransactionState {
+        return when (this) {
+            SuccessWith.PUBLISH_JOIN -> AbstractDispatchFunction.NextTransactionState.JOIN
+            SuccessWith.PUBLISH_COMMIT -> AbstractDispatchFunction.NextTransactionState.COMMIT
+            SuccessWith.END -> AbstractDispatchFunction.NextTransactionState.END
+        }
+    }
+
     protected abstract fun ack(
         transaction: Transaction,
         messageId: String
     ): Mono<Pair<Transaction, String>>
 
     private companion object {
-        private const val DISPATHCED = "dispatched"
+        private const val DISPATCHED = "dispatched"
 
         private val notMatchedTransactionHandlerException =
             NotFoundDispatchFunctionException("Cannot find matched Transaction handler")

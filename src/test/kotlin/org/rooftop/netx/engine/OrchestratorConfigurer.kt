@@ -208,6 +208,27 @@ class OrchestratorConfigurer(
             })
     }
 
+    @Bean(name = ["fooContextOrchestrator"])
+    fun fooContextOrchestrator(): Orchestrator<String, List<OrchestratorTest.Foo>> {
+        return orchestratorFactory.create<String>("fooContextOrchestrator")
+            .startWithContext({ context, _ ->
+                val before = context.decodeContext("0", OrchestratorTest.Foo::class)
+                context.set("1", OrchestratorTest.Foo("startWithContext"))
+            })
+            .joinWithContext({ context, _ ->
+                val before = context.decodeContext("1", OrchestratorTest.Foo::class)
+                context.set("2", OrchestratorTest.Foo("joinWithContext"))
+            })
+            .commitWithContext({ context, _ ->
+                val before = context.decodeContext("2", OrchestratorTest.Foo::class)
+                listOf(
+                    context.decodeContext("0", OrchestratorTest.Foo::class),
+                    context.decodeContext("1", OrchestratorTest.Foo::class),
+                    context.decodeContext("2", OrchestratorTest.Foo::class),
+                )
+            })
+    }
+
     object PairOrchestrate :
         Orchestrate<Pair<OrchestratorTest.Foo, OrchestratorTest.Foo>, Pair<OrchestratorTest.Foo, OrchestratorTest.Foo>> {
         override fun orchestrate(request: Pair<OrchestratorTest.Foo, OrchestratorTest.Foo>): Pair<OrchestratorTest.Foo, OrchestratorTest.Foo> {

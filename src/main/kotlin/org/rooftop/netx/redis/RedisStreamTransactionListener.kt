@@ -17,7 +17,7 @@ import reactor.core.publisher.Mono
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.toJavaDuration
 
-class RedisStreamTransactionListener(
+internal class RedisStreamTransactionListener(
     backpressureSize: Int,
     transactionDispatcher: AbstractTransactionDispatcher,
     connectionFactory: ReactiveRedisConnectionFactory,

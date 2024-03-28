@@ -17,13 +17,13 @@ class NoPublisherTransactionHandlerAssertions : AbstractTransactionHandlerAssert
         put("COMMIT")
     }
 
-    @TransactionStartListener
+    @TransactionStartListener(successWith = SuccessWith.END)
     fun handleStart(event: TransactionStartEvent): Foo {
         put("START")
         return Foo("START")
     }
 
-    @TransactionJoinListener
+    @TransactionJoinListener(successWith = SuccessWith.END)
     fun handleJoin(event: TransactionJoinEvent): Any {
         put("JOIN")
         return Any::class

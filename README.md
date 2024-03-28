@@ -6,7 +6,7 @@
 
 <br>
 
-![version 0.3.6](https://img.shields.io/badge/version-0.3.6-black?labelColor=black&style=flat-square) ![jdk 17](https://img.shields.io/badge/minimum_jdk-17-orange?labelColor=black&style=flat-square) ![load-test](https://img.shields.io/badge/load%20test%2010%2C000%2C000-success-brightgreen?labelColor=black&style=flat-square)    
+![version 0.3.7](https://img.shields.io/badge/version-0.3.7-black?labelColor=black&style=flat-square) ![jdk 17](https://img.shields.io/badge/minimum_jdk-17-orange?labelColor=black&style=flat-square) ![load-test](https://img.shields.io/badge/load%20test%2010%2C000%2C000-success-brightgreen?labelColor=black&style=flat-square)    
 ![redis--stream](https://img.shields.io/badge/-redis--stream-da2020?style=flat-square&logo=Redis&logoColor=white)
 
 Redis-Stream을 지원하는 Saga frame work 입니다.   
@@ -228,8 +228,9 @@ fun exists(param: Any): Mono<Any> {
 #### Events-Scenario4. Handle transaction event
 
 다른 분산서버가 (혹은 자기자신이) transactionManager를 통해서 트랜잭션을 시작하거나 트랜잭션 상태를 변경했을때, 트랜잭션 상태에 맞는 핸들러를 호출합니다.
-이 핸들러를 구현함으로써, 트랜잭션별 상태를 처리할 수 있습니다. (롤백등)
-_롤백은 TransactionRollbackEvent로 전달되는 `undo` 필드를 사용합니다._
+이 핸들러를 구현함으로써, 트랜잭션 상태별 로직을 구현할 수 있습니다.
+각 핸들러에서 에러가 던져지면, 자동으로 rollback 이 호출됩니다.
+
 > [!WARNING]   
 > 트랜잭션 핸들러는 반드시 핸들러에 맞는 `TransactionEvent` **하나**만을 파라미터로 받아야 합니다.
 
@@ -238,27 +239,28 @@ _롤백은 TransactionRollbackEvent로 전달되는 `undo` 필드를 사용합�
 @TransactionHandler
 class TransactionHandler {
 
-    @TransactionStartListener(Foo::class) // Receive transaction event when event can be mapped to Foo.class
+    @TransactionStartListener(event = Foo::class) // Receive transaction event when event can be mapped to Foo.class
     fun handleTransactionStartEvent(event: TransactionStartEvent) {
         val foo: Foo = event.decodeEvent(Foo::class) // Get event field to Foo.class
         // ...
+        event.setNextEvent(nextFoo) // When this handler terminates and calls the next event or rollback, the event set here is published together.
     }
 
-    @TransactionJoinHandler // Receive all transaction event when no type is defined.
+    @TransactionJoinHandler(successWith = SuccessWith.PUBLISH_COMMIT) // Receive all transaction event when no type is defined. And, when terminated this function, publish commit state
     fun handleTransactionJoinEvent(event: TransactionJoinEvent) {
         // ...
     }
 
     @TransactionCommitHandler(
         event = Foo::class,
-        noRetryFor = [IllegalArgumentException::class] // Dont retry when throw IllegalArgumentException. *Retry if throw Throwable or IllegalArgumentException's super type* 
+        noRollbackFor = [IllegalArgumentException::class] // Dont rollback when throw IllegalArgumentException. *Rollback if throw Throwable or IllegalArgumentException's super type* 
     )
     fun handleTransactionCommitEvent(event: TransactionCommitEvent): Mono<String> { // In Webflux framework, publisher must be returned.
         throw IllegalArgumentException("Ignore this exception")
         // ...
     }
 
-    @TransactionRollbackHandler
+    @TransactionRollbackHandler(Foo::class)
     fun handleTransactionRollbackEvent(event: TransactionRollbackEvent) { // In Mvc framework, publisher must not returned.
         val undo: Foo = event.decodeUndo(Foo::class) // Get event field to Foo.class
     }

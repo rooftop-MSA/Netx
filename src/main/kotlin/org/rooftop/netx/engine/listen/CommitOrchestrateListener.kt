@@ -8,7 +8,7 @@ import org.rooftop.netx.engine.ResultHolder
 import reactor.core.publisher.Mono
 
 internal class CommitOrchestrateListener<T : Any, V : Any> internal constructor(
-    private val codec: Codec,
+    codec: Codec,
     transactionManager: TransactionManager,
     private val orchestratorId: String,
     orchestrateSequence: Int,
@@ -27,7 +27,7 @@ internal class CommitOrchestrateListener<T : Any, V : Any> internal constructor(
 ) {
 
     @TransactionCommitListener(OrchestrateEvent::class)
-    fun listenCommitOrchestrateEvent(transactionCommitEvent: TransactionCommitEvent): Mono<Unit> {
+    fun listenCommitOrchestrateEvent(transactionCommitEvent: TransactionCommitEvent): Mono<V> {
         return Mono.just(transactionCommitEvent)
             .map { it.decodeEvent(OrchestrateEvent::class) }
             .filter { it.orchestrateSequence == orchestrateSequence && it.orchestratorId == orchestratorId }
@@ -39,13 +39,15 @@ internal class CommitOrchestrateListener<T : Any, V : Any> internal constructor(
             .map { (request, event) ->
                 orchestrateCommand.command(request, event.context)
             }
+            .doOnError {
+                rollback(
+                    transactionCommitEvent.transactionId,
+                    it,
+                    transactionCommitEvent.decodeEvent(OrchestrateEvent::class)
+                )
+            }
             .flatMap { (response, _) ->
                 resultHolder.setSuccessResult(transactionCommitEvent.transactionId, response)
             }
-            .onErrorRollback(
-                transactionCommitEvent.transactionId,
-                transactionCommitEvent.decodeEvent(OrchestrateEvent::class)
-            )
-            .map { }
     }
 }

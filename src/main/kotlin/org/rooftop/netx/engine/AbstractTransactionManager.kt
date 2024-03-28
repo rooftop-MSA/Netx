@@ -11,31 +11,31 @@ import org.rooftop.netx.engine.logging.infoOnError
 import org.rooftop.netx.engine.logging.warningOnError
 import reactor.core.publisher.Mono
 
-abstract class AbstractTransactionManager(
+internal abstract class AbstractTransactionManager(
     private val codec: Codec,
     private val nodeGroup: String,
     private val nodeName: String,
     private val transactionIdGenerator: TransactionIdGenerator,
 ) : TransactionManager {
 
-    final override fun <T : Any> syncStart(undo: T): String {
-        return start(undo).block()
-            ?: throw TransactionException("Cannot start transaction \"$undo\"")
+    override fun syncStart(): String {
+        return start().block()
+            ?: throw TransactionException("Cannot start transaction")
     }
 
-    override fun <T : Any, S : Any> syncStart(undo: T, event: S): String {
-        return start(undo, event).block()
-            ?: throw TransactionException("Cannot start transaction \"$undo\" \"$event\"")
+    final override fun <T : Any> syncStart(event: T): String {
+        return start(event).block()
+            ?: throw TransactionException("Cannot start transaction \"$event\"")
     }
 
-    final override fun <T : Any> syncJoin(transactionId: String, undo: T): String {
-        return join(transactionId, undo).block()
-            ?: throw TransactionException("Cannot join transaction \"$transactionId\", \"$undo\"")
+    override fun syncJoin(transactionId: String): String {
+        return join(transactionId).block()
+            ?: throw TransactionException("Cannot join transaction \"$transactionId\"")
     }
 
-    override fun <T : Any, S : Any> syncJoin(transactionId: String, undo: T, event: S): String {
-        return join(transactionId, undo, event).block()
-            ?: throw TransactionException("Cannot join transaction \"$transactionId\", \"$undo\", \"$event\"")
+    final override fun <T : Any> syncJoin(transactionId: String, event: T): String {
+        return join(transactionId, event).block()
+            ?: throw TransactionException("Cannot join transaction \"$transactionId\", \"$event\"")
     }
 
     final override fun syncExists(transactionId: String): String {
@@ -63,26 +63,22 @@ abstract class AbstractTransactionManager(
             ?: throw TransactionException("Cannot rollback transaction \"$transactionId\", \"$cause\" \"$event\"")
     }
 
-    final override fun <T : Any> start(undo: T): Mono<String> {
-        return Mono.fromCallable { codec.encode(undo) }
-            .flatMap { encodedUndo ->
-                startTransaction(encodedUndo, null)
-                    .info("Start transaction undo \"$undo\"")
+    override fun start(): Mono<String> {
+        return startTransaction(null)
+            .info("Start transaction")
+            .contextWrite { it.put(CONTEXT_TX_KEY, transactionIdGenerator.generate()) }
+    }
+
+    final override fun <T : Any> start(event: T): Mono<String> {
+        return Mono.fromCallable { codec.encode(event) }
+            .flatMap { encodedEvent ->
+                startTransaction(encodedEvent)
+                    .info("Start transaction event \"$event\"")
             }
             .contextWrite { it.put(CONTEXT_TX_KEY, transactionIdGenerator.generate()) }
     }
 
-    override fun <T : Any, S : Any> start(undo: T, event: S): Mono<String> {
-        return Mono.fromCallable { codec.encode(undo) }
-            .map { it to codec.encode(event) }
-            .flatMap { (encodedUndo, encodedEvent) ->
-                startTransaction(encodedUndo, encodedEvent)
-                    .info("Start transaction undo \"$undo\"")
-            }
-            .contextWrite { it.put(CONTEXT_TX_KEY, transactionIdGenerator.generate()) }
-    }
-
-    private fun startTransaction(undo: String, event: String?): Mono<String> {
+    private fun startTransaction(event: String?): Mono<String> {
         return Mono.deferContextual<String> { Mono.just(it[CONTEXT_TX_KEY]) }
             .flatMap { transactionId ->
                 publishTransaction(
@@ -91,53 +87,50 @@ abstract class AbstractTransactionManager(
                         serverId = nodeName,
                         group = nodeGroup,
                         state = TransactionState.START,
-                        undo = undo,
                         event = event,
                     )
                 )
             }
     }
 
-    override fun <T : Any> join(transactionId: String, undo: T): Mono<String> {
+    override fun join(transactionId: String): Mono<String> {
         return getAnyTransaction(transactionId)
             .map {
                 if (it == TransactionState.COMMIT) {
-                    throw AlreadyCommittedTransactionException(transactionId, it)
+                    throw AlreadyCommittedTransactionException(transactionId, it.name)
                 }
                 transactionId
             }
             .warningOnError("Cannot join transaction")
-            .map { codec.encode(undo) }
             .flatMap {
-                joinTransaction(transactionId, it, null)
-                    .info("Join transaction transactionId \"$transactionId\", undo \"$undo\"")
+                joinTransaction(transactionId, null)
+                    .info("Join transaction transactionId \"$transactionId\"")
             }
     }
 
-    override fun <T : Any, S : Any> join(transactionId: String, undo: T, event: S): Mono<String> {
+    override fun <T : Any> join(transactionId: String, event: T): Mono<String> {
         return getAnyTransaction(transactionId)
             .map {
                 if (it == TransactionState.COMMIT) {
-                    throw AlreadyCommittedTransactionException(transactionId, it)
+                    throw AlreadyCommittedTransactionException(transactionId, it.name)
                 }
                 transactionId
             }
             .warningOnError("Cannot join transaction")
-            .map { codec.encode(undo) to codec.encode(event) }
-            .flatMap { (encodedUndo, encodedEvent) ->
-                joinTransaction(transactionId, encodedUndo, encodedEvent)
-                    .info("Join transaction transactionId \"$transactionId\", undo \"$undo\"")
+            .map { codec.encode(event) }
+            .flatMap {
+                joinTransaction(transactionId, it)
+                    .info("Join transaction transactionId \"$transactionId\", event \"$event\"")
             }
     }
 
-    private fun joinTransaction(transactionId: String, undo: String, event: String?): Mono<String> {
+    private fun joinTransaction(transactionId: String, event: String?): Mono<String> {
         return publishTransaction(
             transactionId, Transaction(
                 id = transactionId,
                 serverId = nodeName,
                 group = nodeGroup,
                 state = TransactionState.JOIN,
-                undo = undo,
                 event = event,
             )
         )

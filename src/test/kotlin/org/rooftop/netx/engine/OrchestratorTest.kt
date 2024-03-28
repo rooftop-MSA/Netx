@@ -7,6 +7,7 @@ import io.kotest.core.spec.style.DescribeSpec
 import io.kotest.matchers.equality.shouldBeEqualToComparingFields
 import io.kotest.matchers.equals.shouldBeEqual
 import org.rooftop.netx.api.Orchestrator
+import org.rooftop.netx.api.TypeReference
 import org.rooftop.netx.meta.EnableDistributedTransaction
 import org.rooftop.netx.redis.RedisContainer
 import org.springframework.beans.factory.annotation.Qualifier
@@ -35,6 +36,7 @@ class OrchestratorTest(
     @Qualifier("contextOrchestrator") private val contextOrchestrator: Orchestrator<String, String>,
     @Qualifier("pairOrchestrator") private val pairOrchestrator: Orchestrator<String, Pair<Foo, Foo>>,
     @Qualifier("startWithContextOrchestrator") private val startWithContextOrchestrator: Orchestrator<String, String>,
+    @Qualifier("fooContextOrchestrator") private val fooContextOrchestrator: Orchestrator<String, List<Foo>>
 ) : DescribeSpec({
 
     describe("numberOrchestrator 구현채는") {
@@ -184,6 +186,27 @@ class OrchestratorTest(
                 )
 
                 result.decodeResultOrThrow(String::class) shouldBeEqual "hello"
+            }
+        }
+    }
+
+    describe("fooContextOrchestrator 구현채는") {
+        context("context 와 함께 transaction 메소드가 호출되면,") {
+            val expected = listOf(
+                Foo("startSync"),
+                Foo("startWithContext"),
+                Foo("joinWithContext"),
+            )
+
+            it("0,1,2 Foo가 들어있는 Foo list를 반환한다.") {
+                val result = fooContextOrchestrator.transactionSync(
+                    "",
+                    mutableMapOf("0" to Foo("startSync"))
+                )
+
+                result.isSuccess shouldBeEqual true
+                result.decodeResultOrThrow(object :
+                    TypeReference<List<Foo>>() {}) shouldBeEqual expected
             }
         }
     }

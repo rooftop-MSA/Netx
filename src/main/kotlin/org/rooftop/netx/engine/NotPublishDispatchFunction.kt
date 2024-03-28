@@ -1,6 +1,7 @@
 package org.rooftop.netx.engine
 
 import org.rooftop.netx.api.TransactionEvent
+import org.rooftop.netx.api.TransactionManager
 import org.rooftop.netx.engine.logging.info
 import reactor.core.publisher.Mono
 import kotlin.reflect.KClass
@@ -14,37 +15,38 @@ internal class NotPublishDispatchFunction(
     eventType: KClass<*>,
     function: KFunction<*>,
     handler: Any,
-    noRetryFor: Array<KClass<out Throwable>>,
-) : AbstractDispatchFunction<Any?>(eventType, function, handler, noRetryFor) {
+    noRollbackFor: Array<KClass<out Throwable>>,
+    nextState: NextTransactionState,
+    transactionManager: TransactionManager,
+) : AbstractDispatchFunction<Any?>(
+    eventType,
+    function,
+    handler,
+    noRollbackFor,
+    nextState,
+    transactionManager,
+) {
 
-    override fun call(transactionEvent: TransactionEvent): Any? {
-        if (!isDecodable(transactionEvent)) {
-            return SKIP
+    override fun call(transactionEvent: TransactionEvent): Any {
+        if (isProcessable(transactionEvent)) {
+            return runCatching {
+                function.call(handler, transactionEvent)
+                info("Call NotPublisher TransactionHandler \"${name()}\" with transactionId \"${transactionEvent.transactionId}\"")
+            }.fold(
+                onSuccess = { publishNextTransaction(transactionEvent) },
+                onFailure = {
+                    if (isNoRollbackFor(it)) {
+                        return@fold NO_ROLLBACK_FOR
+                    }
+                    rollback(transactionEvent, it)
+                },
+            )
         }
-        runCatching {
-            val result = function.call(handler, transactionEvent)
-            info("Call NotPublisher TransactionHandler \"${name()}\" with transactionId \"${transactionEvent.transactionId}\"")
-            return result
-        }.onFailure { throwable ->
-            if (isNoRetryFor(throwable)) {
-                info("Call NotPublisher TransactionHandler \"${name()}\" with transactionId \"${transactionEvent.transactionId}\" no retry for mode")
-                return SUCCESS_CAUSE_NO_RETRY_FOR
-            }
-            throw throwable
-        }
-        throw IllegalStateException("Unreachable code")
-    }
-
-    private fun isDecodable(transactionEvent: TransactionEvent): Boolean {
-        runCatching { transactionEvent.decodeEvent(eventType) }
-            .onFailure {
-                return it is NullPointerException && eventType == Any::class
-            }
-        return true
+        return SKIP
     }
 
     private companion object {
-        private const val SUCCESS_CAUSE_NO_RETRY_FOR = "SUCCESS"
+        private const val NO_ROLLBACK_FOR = "SUCCESS"
         private const val SKIP = "SKIP"
     }
 }

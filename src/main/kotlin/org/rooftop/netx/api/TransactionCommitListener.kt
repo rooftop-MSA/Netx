@@ -6,5 +6,5 @@ import kotlin.reflect.KClass
 @Retention(AnnotationRetention.RUNTIME)
 annotation class TransactionCommitListener(
     val event: KClass<*> = Any::class,
-    val noRetryFor: Array<KClass<out Throwable>> = [],
+    val noRollbackFor: Array<KClass<out Throwable>> = [],
 )

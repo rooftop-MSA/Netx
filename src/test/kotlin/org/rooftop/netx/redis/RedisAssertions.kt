@@ -8,7 +8,7 @@ import org.springframework.data.domain.Range
 import org.springframework.data.redis.core.ReactiveRedisOperations
 
 @TestComponent
-class RedisAssertions(
+internal class RedisAssertions(
     private val reactiveRedisOperations: ReactiveRedisOperations<String, Transaction>,
     @Value("\${netx.group}") private val nodeGroup: String,
 ) {

@@ -1,6 +1,7 @@
 package org.rooftop.netx.engine
 
 import io.kotest.matchers.equals.shouldBeEqual
+import org.rooftop.netx.api.SuccessWith
 import org.rooftop.netx.api.TransactionEvent
 import org.rooftop.netx.api.TransactionStartEvent
 import org.rooftop.netx.api.TransactionStartListener
@@ -25,33 +26,33 @@ class TransactionTypedReceiveStorage {
         (storage[key]?.size ?: 0) shouldBeEqual count
     }
 
-    @TransactionStartListener
+    @TransactionStartListener(successWith = SuccessWith.END)
     fun any(transaction: TransactionStartEvent): Mono<Unit> {
         return Mono.fromCallable { log(Any::class, transaction) }
     }
 
-    @TransactionStartListener(NetxEventTypedDispatherTest.Foo::class)
+    @TransactionStartListener(NetxEventTypedDispatherTest.Foo::class, successWith = SuccessWith.END)
     fun foo(transaction: TransactionStartEvent): Mono<Unit> {
         return Mono.fromCallable { log(NetxEventTypedDispatherTest.Foo::class, transaction) }
     }
 
-    @TransactionStartListener(String::class)
+    @TransactionStartListener(String::class, successWith = SuccessWith.END)
     fun string(transaction: TransactionStartEvent) {
         log(String::class, transaction)
     }
 
-    @TransactionStartListener(Long::class)
+    @TransactionStartListener(Long::class, successWith = SuccessWith.END)
     fun long(transaction: TransactionStartEvent): Long {
         log(Long::class, transaction)
         return 1L
     }
 
-    @TransactionStartListener(Unit::class)
+    @TransactionStartListener(Unit::class, successWith = SuccessWith.END)
     fun unit(transaction: TransactionStartEvent) {
         log(Unit::class, transaction)
     }
 
-    @TransactionStartListener(Boolean::class)
+    @TransactionStartListener(Boolean::class, successWith = SuccessWith.END)
     fun boolean(transaction: TransactionStartEvent) {
         log(Boolean::class, transaction)
     }

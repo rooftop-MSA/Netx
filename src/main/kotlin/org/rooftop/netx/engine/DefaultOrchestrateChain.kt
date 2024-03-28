@@ -8,8 +8,8 @@ class DefaultOrchestrateChain<OriginReq : Any, T : Any, V : Any> private constru
     private val orchestratorId: String,
     private val orchestrateSequence: Int,
     private val chainContainer: ChainContainer,
-    private val orchestrateListener: AbstractOrchestrateListener<T, V>,
-    private val rollbackOrchestrateListener: AbstractOrchestrateListener<T, *>?,
+    private var orchestrateListener: AbstractOrchestrateListener<T, V>,
+    private var rollbackOrchestrateListener: AbstractOrchestrateListener<T, *>?,
     private val beforeDefaultOrchestrateChain: DefaultOrchestrateChain<OriginReq, out Any, T>? = null,
 ) : OrchestrateChain<OriginReq, T, V> {
 
@@ -211,15 +211,15 @@ class DefaultOrchestrateChain<OriginReq : Any, T : Any, V : Any> private constru
                 this,
             )
             this.nextDefaultOrchestrateChain = nextDefaultOrchestrateChain
-            val firstOrchestrateChain = nextDefaultOrchestrateChain.initOrchestrateListeners()
+            val firstOrchestrators = nextDefaultOrchestrateChain.initOrchestrateListeners()
 
             return@cache OrchestratorManager<OriginReq, S>(
                 transactionManager = chainContainer.transactionManager,
                 codec = chainContainer.codec,
                 orchestratorId = orchestratorId,
                 resultHolder = chainContainer.resultHolder,
-                orchestrateListener = firstOrchestrateChain.orchestrateListener,
-                rollbackOrchestrateListener = firstOrchestrateChain.rollbackOrchestrateListener,
+                orchestrateListener = firstOrchestrators.first,
+                rollbackOrchestrateListener = firstOrchestrators.second,
             )
         }
     }
@@ -263,32 +263,33 @@ class DefaultOrchestrateChain<OriginReq : Any, T : Any, V : Any> private constru
             )
             this.nextDefaultOrchestrateChain = nextDefaultOrchestrateChain
 
-            val firstOrchestrateChain = nextDefaultOrchestrateChain.initOrchestrateListeners()
+            val firstOrchestrators = nextDefaultOrchestrateChain.initOrchestrateListeners()
 
             return@cache OrchestratorManager<OriginReq, S>(
                 transactionManager = chainContainer.transactionManager,
                 codec = chainContainer.codec,
                 orchestratorId = orchestratorId,
                 resultHolder = chainContainer.resultHolder,
-                orchestrateListener = firstOrchestrateChain.orchestrateListener,
-                rollbackOrchestrateListener = firstOrchestrateChain.rollbackOrchestrateListener,
+                orchestrateListener = firstOrchestrators.first,
+                rollbackOrchestrateListener = firstOrchestrators.second
             )
         }
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun initOrchestrateListeners(): DefaultOrchestrateChain<OriginReq, OriginReq, out Any> {
-        val cursorAndOrchestrateListener = getAllOrchestrateListeners()
+    private fun initOrchestrateListeners(): Pair<AbstractOrchestrateListener<OriginReq, Any>, AbstractOrchestrateListener<OriginReq, Any>?> {
+        val annotatedListeners = getAllOrchestrateListeners()
+            .toAnnotatedListeners()
 
-        chainOrchestrateListeners(cursorAndOrchestrateListener.second)
-        chainRollbackListeners(cursorAndOrchestrateListener.second)
+        chainOrchestrateListeners(annotatedListeners)
+        chainRollbackListeners(annotatedListeners)
 
-        addDispatcher(cursorAndOrchestrateListener.second)
+        addDispatcher(annotatedListeners)
 
-        return cursorAndOrchestrateListener.first as DefaultOrchestrateChain<OriginReq, OriginReq, out Any>
+        return annotatedListeners[0] as Pair<AbstractOrchestrateListener<OriginReq, Any>, AbstractOrchestrateListener<OriginReq, Any>?>
     }
 
-    private fun getAllOrchestrateListeners(): Pair<DefaultOrchestrateChain<OriginReq, out Any, out Any>?, MutableList<Pair<AbstractOrchestrateListener<out Any, out Any>, AbstractOrchestrateListener<out Any, out Any>?>>> {
+    private fun getAllOrchestrateListeners(): MutableList<Pair<AbstractOrchestrateListener<out Any, out Any>, AbstractOrchestrateListener<out Any, out Any>?>> {
         val orchestrateListeners = mutableListOf<
                 Pair<AbstractOrchestrateListener<out Any, out Any>, AbstractOrchestrateListener<out Any, out Any>?>>()
 
@@ -308,7 +309,22 @@ class DefaultOrchestrateChain<OriginReq : Any, T : Any, V : Any> private constru
 
         orchestrateListeners.reverse()
 
-        return defaultOrchestrateChainCursor to orchestrateListeners
+        return orchestrateListeners
+    }
+
+    private fun List<Pair<AbstractOrchestrateListener<out Any, out Any>, AbstractOrchestrateListener<out Any, out Any>?>>.toAnnotatedListeners()
+            : MutableList<Pair<AbstractOrchestrateListener<out Any, out Any>, AbstractOrchestrateListener<out Any, out Any>?>> {
+        return this.withIndex().map {
+            val isFirst = it.index == 0
+            val isLast =
+                it.index == (this.size - 1 - COMMIT_LISTENER_PREFIX)
+
+            val listener = it.value.first
+            listener.isFirst = isFirst
+            listener.isLast = isLast
+
+            listener.withAnnotated() to it.value.second
+        }.toMutableList()
     }
 
     private fun chainOrchestrateListeners(orchestrateListeners: List<Pair<AbstractOrchestrateListener<out Any, out Any>, AbstractOrchestrateListener<out Any, out Any>?>>) {
@@ -357,8 +373,8 @@ class DefaultOrchestrateChain<OriginReq : Any, T : Any, V : Any> private constru
 
     private fun addDispatcher(orchestrateListeners: List<Pair<AbstractOrchestrateListener<out Any, out Any>, AbstractOrchestrateListener<out Any, out Any>?>>) {
         orchestrateListeners.forEach { (listener, rollbackListener) ->
-            chainContainer.transactionDispatcher.addHandler(listener)
-            rollbackListener?.let { chainContainer.transactionDispatcher.addHandler(it) }
+            chainContainer.transactionDispatcher.addOrchestrate(listener)
+            rollbackListener?.let { chainContainer.transactionDispatcher.addOrchestrate(it) }
         }
     }
 

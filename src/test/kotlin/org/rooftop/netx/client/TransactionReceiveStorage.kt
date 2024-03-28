@@ -33,27 +33,44 @@ class TransactionReceiveStorage(
         (storage["ROLLBACK"]?.size ?: 0) shouldBeGreaterThanOrEqual count
     }
 
-    @TransactionRollbackListener
-    fun logRollback(transaction: TransactionRollbackEvent): Mono<Unit> {
-        return Mono.fromCallable { log("ROLLBACK", transaction) }
+    @TransactionStartListener(
+        event = NetxLoadTest.LoadTestEvent::class,
+        successWith = SuccessWith.PUBLISH_JOIN
+    )
+    fun listenStart(transaction: TransactionStartEvent): Mono<Unit> {
+        return Mono.fromCallable { saveTransaction("START", transaction) }
+            .map { transaction.decodeEvent(NetxLoadTest.LoadTestEvent::class) }
+            .map { transaction.setNextEvent(it) }
     }
 
-    @TransactionStartListener
-    fun logStart(transaction: TransactionStartEvent): Mono<Unit> {
-        return Mono.fromCallable { log("START", transaction) }
+    @TransactionJoinListener(
+        event = NetxLoadTest.LoadTestEvent::class,
+        successWith = SuccessWith.PUBLISH_COMMIT
+    )
+    fun listenJoin(transaction: TransactionJoinEvent): Mono<Unit> {
+        return Mono.fromCallable { saveTransaction("JOIN", transaction) }
+            .map { transaction.decodeEvent(NetxLoadTest.LoadTestEvent::class) }
+            .map { transaction.setNextEvent(it) }
     }
 
-    @TransactionJoinListener
-    fun logJoin(transaction: TransactionJoinEvent): Mono<Unit> {
-        return Mono.fromCallable { log("JOIN", transaction) }
+    @TransactionRollbackListener(event = NetxLoadTest.LoadTestEvent::class)
+    fun listenRollback(transaction: TransactionRollbackEvent): Mono<Unit> {
+        return Mono.fromCallable { saveTransaction("ROLLBACK", transaction) }
     }
 
-    @TransactionCommitListener
-    fun logCommit(transaction: TransactionCommitEvent): Mono<Unit> {
-        return Mono.fromCallable { log("COMMIT", transaction) }
+    @TransactionCommitListener(event = NetxLoadTest.LoadTestEvent::class)
+    fun listenCommit(transaction: TransactionCommitEvent): Mono<Unit> {
+        return Mono.fromCallable { saveTransaction("COMMIT", transaction) }
+            .map { transaction.decodeEvent(NetxLoadTest.LoadTestEvent::class) }
+            .map {
+                transaction.setNextEvent(it)
+                if (it.load == "-") {
+                    throw IllegalArgumentException("Rollback cause \"-\"")
+                }
+            }
     }
 
-    private fun log(key: String, transaction: TransactionEvent) {
+    private fun saveTransaction(key: String, transaction: TransactionEvent) {
         storage.putIfAbsent(key, CopyOnWriteArrayList())
         storage[key]?.add(transaction)
     }

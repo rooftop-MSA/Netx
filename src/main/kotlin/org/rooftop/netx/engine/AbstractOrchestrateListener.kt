@@ -7,7 +7,7 @@ import kotlin.reflect.KClass
 
 internal abstract class AbstractOrchestrateListener<T : Any, V : Any> internal constructor(
     private val orchestratorId: String,
-    val orchestrateSequence: Int,
+    internal val orchestrateSequence: Int,
     private val codec: Codec,
     private val transactionManager: TransactionManager,
     private val requestHolder: RequestHolder,
@@ -89,7 +89,7 @@ internal abstract class AbstractOrchestrateListener<T : Any, V : Any> internal c
         }
     }
 
-    protected fun getCastableType(): KClass<out T> {
+    private fun getCastableType(): KClass<out T> {
         return castableType
             ?: throw NullPointerException("OrchestratorId \"$orchestratorId\", OrchestrateSequence \"$orchestrateSequence\"'s CastableType was null")
     }
@@ -100,25 +100,15 @@ internal abstract class AbstractOrchestrateListener<T : Any, V : Any> internal c
         } ?: throw NullPointerException("Cannot cast \"$data\" cause, castableType is null")
     }
 
-    protected fun TransactionEvent.toOrchestrateEvent(): Mono<OrchestrateEvent> =
+    protected fun TransactionEvent.startWithOrchestrateEvent(): Mono<OrchestrateEvent> =
         Mono.just(this.decodeEvent(OrchestrateEvent::class))
 
-    protected fun <S> Mono<S>.onErrorRollback(
-        transactionId: String,
-        orchestrateEvent: OrchestrateEvent,
-    ): Mono<S> = this.onErrorResume {
-        holdFailResult(transactionId, it)
-        rollback(transactionId, it, orchestrateEvent)
-        Mono.empty()
+    private fun Throwable.toEmptyStackTrace(): Throwable {
+        this.stackTrace = arrayOf()
+        return this
     }
 
-    private fun holdFailResult(transactionId: String, throwable: Throwable) {
-        throwable.stackTrace = arrayOf()
-        resultHolder.setFailResult(transactionId, throwable)
-            .subscribeOn(Schedulers.parallel()).subscribe()
-    }
-
-    private fun rollback(
+    protected fun rollback(
         transactionId: String,
         throwable: Throwable,
         orchestrateEvent: OrchestrateEvent,
@@ -130,19 +120,28 @@ internal abstract class AbstractOrchestrateListener<T : Any, V : Any> internal c
                 "",
                 orchestrateEvent.context,
             )
-        transactionManager.rollback(
-            transactionId = transactionId,
-            cause = throwable.message ?: throwable.localizedMessage,
-            event = rollbackOrchestrateEvent
-        ).subscribeOn(Schedulers.parallel()).subscribe()
+        holdFailResult(transactionId, throwable)
+            .flatMap {
+                transactionManager.rollback(
+                    transactionId = transactionId,
+                    cause = throwable.message ?: throwable.localizedMessage,
+                    event = rollbackOrchestrateEvent
+                )
+            }.subscribeOn(Schedulers.parallel()).subscribe()
+    }
+
+    private fun holdFailResult(transactionId: String, throwable: Throwable): Mono<Throwable> {
+        return resultHolder.setFailResult(transactionId, throwable.toEmptyStackTrace())
+    }
+
+    open fun withAnnotated(): AbstractOrchestrateListener<T, V> {
+        return this
     }
 
     override fun toString(): String {
-        return "AbstractOrchestrateListener(orchestrateSequence=$orchestrateSequence, " +
+        return "${this.javaClass.name}(orchestrateSequence=$orchestrateSequence, " +
                 "isFirst=$isFirst, isLast=$isLast, isRollbackable=$isRollbackable, " +
                 "beforeRollbackOrchestrateSequence=$beforeRollbackOrchestrateSequence, " +
                 "rollbackSequence=$rollbackSequence)"
     }
-
-
 }

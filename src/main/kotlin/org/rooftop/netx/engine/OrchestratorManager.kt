@@ -66,12 +66,11 @@ class OrchestratorManager<T : Any, V : Any> internal constructor(
                     context = codec.encode(context.mapValues { codec.encode(it.value) })
                 )
             }
-            .flatMap { transactionManager.start(UNDO, it) }
+            .flatMap { transactionManager.start(it) }
             .flatMap { resultHolder.getResult(timeoutMillis.milliseconds, it) }
     }
 
     private companion object {
-        private const val UNDO = "Orchestrate mode";
         private const val TEN_SECONDS_TO_TIME_OUT = 10000L
     }
 }

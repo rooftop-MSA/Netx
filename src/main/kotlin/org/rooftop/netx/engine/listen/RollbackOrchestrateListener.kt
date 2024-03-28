@@ -28,7 +28,7 @@ internal class RollbackOrchestrateListener<T : Any, V : Any>(
 
     @TransactionRollbackListener(OrchestrateEvent::class)
     fun listenRollbackOrchestrateEvent(transactionRollbackEvent: TransactionRollbackEvent): Mono<Unit> {
-        return transactionRollbackEvent.toOrchestrateEvent()
+        return transactionRollbackEvent.startWithOrchestrateEvent()
             .filter { it.orchestratorId == orchestratorId && it.orchestrateSequence == orchestrateSequence }
             .getHeldRequest(transactionRollbackEvent)
             .map { (request, event) ->

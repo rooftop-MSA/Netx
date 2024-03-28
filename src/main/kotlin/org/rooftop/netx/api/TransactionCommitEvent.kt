@@ -1,9 +1,13 @@
 package org.rooftop.netx.api
 
-class TransactionCommitEvent(
+class TransactionCommitEvent internal constructor(
     transactionId: String,
     nodeName: String,
     group: String,
     event: String?,
     codec: Codec,
-): TransactionEvent(transactionId, nodeName, group, event, codec)
+): TransactionEvent(transactionId, nodeName, group, event, codec) {
+
+    override fun copy(): TransactionEvent =
+        TransactionJoinEvent(transactionId, nodeName, group, event, codec)
+}

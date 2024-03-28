@@ -34,9 +34,9 @@ internal class RedisStreamTransactionManagerTest(
     }
 
     describe("start 메소드는") {
-        context("UNDO 를 입력받으면,") {
+        context("어떤 event도 없이 호출되면,") {
             it("트랜잭션을 시작하고 transaction-id를 반환한다.") {
-                transactionManager.start(UNDO).subscribe()
+                transactionManager.start().subscribe()
 
                 eventually(5.seconds) {
                     monoTransactionHandlerAssertions.startCountShouldBe(1)
@@ -47,8 +47,8 @@ internal class RedisStreamTransactionManagerTest(
 
         context("서로 다른 id의 트랜잭션이 여러번 시작되어도") {
             it("모두 읽을 수 있다.") {
-                transactionManager.start(UNDO).block()
-                transactionManager.start(UNDO).block()
+                transactionManager.start().block()
+                transactionManager.start().block()
 
                 eventually(5.seconds) {
                     monoTransactionHandlerAssertions.startCountShouldBe(2)
@@ -59,9 +59,9 @@ internal class RedisStreamTransactionManagerTest(
     }
 
     describe("syncStart 메소드는") {
-        context("UNDO 를 입력받으면,") {
+        context("어떤 event도 없이 호출되면,") {
             it("트랜잭션을 시작하고 transaction-id를 반환한다.") {
-                transactionManager.syncStart(UNDO)
+                transactionManager.syncStart()
 
                 eventually(5.seconds) {
                     monoTransactionHandlerAssertions.startCountShouldBe(1)
@@ -72,8 +72,8 @@ internal class RedisStreamTransactionManagerTest(
 
         context("서로 다른 id의 트랜잭션이 여러번 시작되어도") {
             it("모두 읽을 수 있다.") {
-                transactionManager.syncStart(UNDO)
-                transactionManager.syncStart(UNDO)
+                transactionManager.syncStart()
+                transactionManager.syncStart()
 
                 eventually(5.seconds) {
                     monoTransactionHandlerAssertions.startCountShouldBe(2)
@@ -85,10 +85,10 @@ internal class RedisStreamTransactionManagerTest(
 
     describe("join 메소드는") {
         context("존재하는 transactionId를 입력받으면,") {
-            val transactionId = transactionManager.start(UNDO).block()!!
+            val transactionId = transactionManager.start().block()!!
 
             it("트랜잭션에 참여한다.") {
-                transactionManager.join(transactionId, UNDO).subscribe()
+                transactionManager.join(transactionId).subscribe()
 
                 eventually(5.seconds) {
                     monoTransactionHandlerAssertions.joinCountShouldBe(1)
@@ -99,7 +99,7 @@ internal class RedisStreamTransactionManagerTest(
 
         context("존재하지 않는 transactionId를 입력받으면,") {
             it("TransactionException 을 던진다.") {
-                val result = transactionManager.join(NOT_EXIST_TX_ID, UNDO)
+                val result = transactionManager.join(NOT_EXIST_TX_ID)
 
                 StepVerifier.create(result)
                     .verifyErrorMessage("Cannot find exists transaction id \"$NOT_EXIST_TX_ID\"")
@@ -109,10 +109,10 @@ internal class RedisStreamTransactionManagerTest(
 
     describe("syncJoin 메소드는") {
         context("존재하는 transactionId를 입력받으면,") {
-            val transactionId = transactionManager.syncStart(UNDO)
+            val transactionId = transactionManager.syncStart()
 
             it("트랜잭션에 참여한다.") {
-                transactionManager.syncJoin(transactionId, UNDO)
+                transactionManager.syncJoin(transactionId)
 
                 eventually(5.seconds) {
                     monoTransactionHandlerAssertions.joinCountShouldBe(1)
@@ -124,7 +124,7 @@ internal class RedisStreamTransactionManagerTest(
         context("존재하지 않는 transactionId를 입력받으면,") {
             it("TransactionException 을 던진다.") {
                 shouldThrowMessage("Cannot find exists transaction id \"$NOT_EXIST_TX_ID\"") {
-                    transactionManager.syncJoin(NOT_EXIST_TX_ID, UNDO)
+                    transactionManager.syncJoin(NOT_EXIST_TX_ID)
                 }
             }
         }
@@ -132,7 +132,7 @@ internal class RedisStreamTransactionManagerTest(
 
     describe("exists 메소드는") {
         context("존재하는 transactionId를 입력받으면,") {
-            val transactionId = transactionManager.start(UNDO).block()!!
+            val transactionId = transactionManager.start().block()!!
 
             it("트랜잭션 id를 반환한다.") {
                 val result = transactionManager.exists(transactionId)
@@ -155,7 +155,7 @@ internal class RedisStreamTransactionManagerTest(
 
     describe("syncExists 메소드는") {
         context("존재하는 transactionId를 입력받으면,") {
-            val transactionId = transactionManager.syncStart(UNDO)
+            val transactionId = transactionManager.syncStart()
 
             it("트랜잭션 id를 반환한다.") {
                 val result = transactionManager.syncExists(transactionId)
@@ -175,7 +175,7 @@ internal class RedisStreamTransactionManagerTest(
 
     describe("commit 메소드는") {
         context("존재하는 transactionId를 입력받으면,") {
-            val transactionId = transactionManager.start(UNDO).block()!!
+            val transactionId = transactionManager.start().block()!!
 
             it("commit 메시지를 publish 한다") {
                 transactionManager.commit(transactionId).block()
@@ -199,7 +199,7 @@ internal class RedisStreamTransactionManagerTest(
 
     describe("syncCommit 메소드는") {
         context("존재하는 transactionId를 입력받으면,") {
-            val transactionId = transactionManager.syncStart(UNDO)
+            val transactionId = transactionManager.syncStart()
 
             it("commit 메시지를 publish 한다") {
                 transactionManager.syncCommit(transactionId)
@@ -222,7 +222,7 @@ internal class RedisStreamTransactionManagerTest(
 
     describe("rollback 메소드는") {
         context("존재하는 transactionId를 입력받으면,") {
-            val transactionId = transactionManager.start(UNDO).block()!!
+            val transactionId = transactionManager.start().block()!!
 
             it("rollback 메시지를 publish 한다") {
                 transactionManager.rollback(transactionId, "rollback for test").block()
@@ -246,7 +246,7 @@ internal class RedisStreamTransactionManagerTest(
 
     describe("syncRollback 메소드는") {
         context("존재하는 transactionId를 입력받으면,") {
-            val transactionId = transactionManager.syncStart(UNDO)
+            val transactionId = transactionManager.syncStart()
 
             it("rollback 메시지를 publish 한다") {
                 transactionManager.syncRollback(transactionId, "rollback for test")
@@ -269,7 +269,6 @@ internal class RedisStreamTransactionManagerTest(
 }) {
 
     private companion object {
-        private const val UNDO = "UNDO"
         private const val NOT_EXIST_TX_ID = "NOT_EXISTS_TX_ID"
     }
 }
